@@ -1,15 +1,15 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Write-Up Gym — JPN302 作文サポート</title>
+<title>Write-Up Gym</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
-/* Write-Up Gym 配色: テラコッタオレンジ #E07A5F 基調（SUGのグリーン系と区別） */
+/* Write-Up Gym color scheme: terracotta orange #E07A5F (distinct from SUG's green) */
 tailwind.config = {
   theme: { extend: { colors: { terra: {
     50: '#FBF3EF', 100: '#F6E2D8', 200: '#EFC9B9', 300: '#E8AC94',
@@ -30,10 +30,10 @@ tailwind.config = {
 <script type="text/babel">
 
 /* ================================================================
- * Write-Up Gym — index.html（プロトタイプ v1）
- * デプロイしたGASウェブアプリの /exec URL を下に貼ること
+ * Write-Up Gym — index.html (prototype)
+ * Paste your deployed GAS web app /exec URL below
  * ================================================================ */
-const API_URL = 'https://script.google.com/macros/s/AKfycbw6__0aAuOvm4AjW0Sx2ExQP1I6L7VBH_0l2YJ9T9jEFHpDMyZSyz2k2Wjw56qqjLmwcA/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxA2wG0-qUkS1eNNlefvYOtBFxcIqXDWNy_Ql_7b020WsQv5loYdZmyPjf7ujJqPTkEBg/exec';
 
 const { useState, useEffect, useRef, useCallback } = React;
 
@@ -44,19 +44,25 @@ async function api(fn, ...args) {
     body: JSON.stringify({ fn, args })
   });
   const json = await res.json();
-  if (!json.ok) throw new Error(json.error || 'サーバーエラー');
+  if (!json.ok) throw new Error(json.error || 'Server error');
   return json.data;
 }
 
-/* ---------- 段階の定義 ---------- */
+/* ---------- stages ---------- */
 const STEPS = [
-  { key: 'draft',   label: '① 下書き' },
-  { key: 'english', label: '② 英語チェック' },
-  { key: 'deepl',   label: '③ DeepL照合' },
-  { key: 'chat',    label: '④ とらいくん添削' },
-  { key: 'final',   label: '⑤ 最終稿' }
+  { key: 'draft',   label: '① Draft' },
+  { key: 'english', label: '② English Check' },
+  { key: 'deepl',   label: '③ DeepL Check' },
+  { key: 'chat',    label: '④ Torai-kun Chat' },
+  { key: 'final',   label: '⑤ Final Draft' }
 ];
+// Values written to the teacher's progress sheet (kept in Japanese per spec)
 const STAGE_SHEET = { draft: '原稿入力', english: '英語チェック', deepl: 'DeepL照合', chat: 'Geminiチャット', final: 'Geminiチャット', done: '完了' };
+// English labels shown to students for those sheet values
+const STAGE_LABEL_EN = {
+  '原稿入力': 'Draft', '英語チェック': 'English Check', 'DeepL照合': 'DeepL Check',
+  'Geminiチャット': 'Torai-kun Chat', '完了': 'Done'
+};
 const STAGE_BADGE = {
   '原稿入力': 'bg-gray-200 text-gray-700', '英語チェック': 'bg-yellow-200 text-yellow-800',
   'DeepL照合': 'bg-stone-200 text-stone-700', 'Geminiチャット': 'bg-terra-200 text-terra-800',
@@ -68,16 +74,16 @@ function emptyState() {
     stage: 'draft', draft: '',
     englishText: '', englishItems: [],
     deeplText: '', deeplEn: '', ref1a: '', ref1b: '',
-    chat: [], finalText: '', ref2a: '', ref2b: ''
+    chat: [], chatDraft: '', finalText: '', ref2a: '', ref2b: ''
   };
 }
 
-/* ---------- 小さな部品 ---------- */
+/* ---------- small parts ---------- */
 function Spinner({ text }) {
   return (
     <span className="inline-flex items-center gap-2 text-terra-600">
       <span className="animate-spin inline-block w-4 h-4 border-2 border-terra-500 border-t-transparent rounded-full"></span>
-      {text || '処理中...'}
+      {text || 'Processing...'}
     </span>
   );
 }
@@ -106,7 +112,7 @@ function Stepper({ stage }) {
   );
 }
 
-/* とらいくんの返答を簡易表示（**太字**・> 引用・改行のみ対応） */
+/* Simple renderer for Torai-kun's replies (**bold**, > quotes, line breaks) */
 function renderChatText(text) {
   const lines = String(text).split('\n');
   return lines.map((line, i) => {
@@ -138,14 +144,14 @@ function App() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6">
+    <div className="max-w-5xl mx-auto px-4 py-6">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-terra-700">🐯 Write-Up Gym <span className="text-sm font-normal text-gray-500">JPN302 作文サポート</span></h1>
+        <h1 className="text-2xl font-bold text-terra-700">🐯 Write-Up Gym</h1>
         {auth && (
           <div className="text-sm text-gray-600 flex items-center gap-3">
             <span>👤 {auth.name}</span>
-            {view === 'work' && <button onClick={() => { setView('menu'); setDnum(null); }} className="text-terra-600 underline">D#メニュー</button>}
-            <button onClick={logout} className="text-gray-400 underline">ログアウト</button>
+            {view === 'work' && <button onClick={() => { setView('menu'); setDnum(null); }} className="text-terra-600 underline">D# Menu</button>}
+            <button onClick={logout} className="text-gray-400 underline">Log out</button>
           </div>
         )}
       </header>
@@ -157,7 +163,7 @@ function App() {
   );
 }
 
-/* ---------- ログイン ---------- */
+/* ---------- Login ---------- */
 function LoginView({ onLogin, setError }) {
   const [students, setStudents] = useState([]);
   const [name, setName] = useState('');
@@ -184,25 +190,25 @@ function LoginView({ onLogin, setError }) {
 
   return (
     <div className="bg-white rounded-2xl shadow p-8 max-w-md mx-auto mt-10">
-      <h2 className="text-lg font-bold mb-4">ログイン</h2>
-      {loading ? <Spinner text="読み込み中..." /> : (
+      <h2 className="text-lg font-bold mb-4">Login</h2>
+      {loading ? <Spinner text="Loading..." /> : (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-bold text-gray-600 mb-1">名前 / Name</label>
+            <label className="block text-sm font-bold text-gray-600 mb-1">Name</label>
             <select value={name} onChange={e => setName(e.target.value)} className="w-full border rounded-lg p-2">
-              <option value="">選んでください</option>
+              <option value="">Select your name</option>
               {students.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-bold text-gray-600 mb-1">コード / PIN</label>
+            <label className="block text-sm font-bold text-gray-600 mb-1">PIN</label>
             <input type="password" value={pin} onChange={e => setPin(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && name && pin && login()}
-              className="w-full border rounded-lg p-2" placeholder="4桁のコード" />
+              className="w-full border rounded-lg p-2" placeholder="Your 4-digit PIN" />
           </div>
           <button onClick={login} disabled={!name || !pin || busy}
             className="w-full bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white font-bold py-2 rounded-lg">
-            {busy ? '確認中...' : 'ログイン'}
+            {busy ? 'Checking...' : 'Login'}
           </button>
         </div>
       )}
@@ -210,7 +216,7 @@ function LoginView({ onLogin, setError }) {
   );
 }
 
-/* ---------- D#選択メニュー ---------- */
+/* ---------- D# menu ---------- */
 function MenuView({ auth, onSelect, setError }) {
   const [progress, setProgress] = useState(null);
 
@@ -220,12 +226,12 @@ function MenuView({ auth, onSelect, setError }) {
       .catch(e => setError(e.message));
   }, []);
 
-  if (!progress) return <div className="text-center mt-16"><Spinner text="進捗を読み込み中..." /></div>;
+  if (!progress) return <div className="text-center mt-16"><Spinner text="Loading your progress..." /></div>;
 
   return (
     <div className="bg-white rounded-2xl shadow p-8">
-      <h2 className="text-lg font-bold mb-1">課題を選んでください</h2>
-      <p className="text-sm text-gray-500 mb-5">進行中のD#を選ぶと、保存されているところから再開できます。</p>
+      <h2 className="text-lg font-bold mb-1">Choose an assignment</h2>
+      <p className="text-sm text-gray-500 mb-5">Select an in-progress D# to resume where you left off, or a new one to start.</p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {Array.from({ length: progress.numDs }, (_, i) => i + 1).map(n => {
           const info = progress.items['D' + n];
@@ -236,11 +242,11 @@ function MenuView({ auth, onSelect, setError }) {
               {info ? (
                 <div>
                   <span className={'inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold ' + (STAGE_BADGE[info.stage] || 'bg-gray-200')}>
-                    {info.stage}
+                    {STAGE_LABEL_EN[info.stage] || info.stage}
                   </span>
-                  {info.reviewed && <div className="text-xs text-green-700 font-bold mt-1">✅ 先生レビュー済み</div>}
+                  {info.reviewed && <div className="text-xs text-green-700 font-bold mt-1">✅ Reviewed by your teacher</div>}
                 </div>
-              ) : <span className="inline-block mt-1 text-xs text-gray-400">未着手</span>}
+              ) : <span className="inline-block mt-1 text-xs text-gray-400">Not started</span>}
             </button>
           );
         })}
@@ -249,14 +255,14 @@ function MenuView({ auth, onSelect, setError }) {
   );
 }
 
-/* ---------- 作業画面（全ステップ） ---------- */
+/* ---------- Work view (all steps) ---------- */
 function WorkView({ auth, dnum, setError, onExit }) {
-  const [st, setSt] = useState(null);     // 作業状態
+  const [st, setSt] = useState(null);     // working state
   const [busy, setBusy] = useState('');   // '' | 'save' | 'check' | 'deepl' | 'chat' | 'doc'
   const stRef = useRef(null);
   stRef.current = st;
 
-  // 状態の読み込み（再開）
+  // load saved state (resume)
   useEffect(() => {
     api('getState', { name: auth.name, pin: auth.pin, dnum })
       .then(d => setSt(d.state ? Object.assign(emptyState(), d.state) : emptyState()))
@@ -265,7 +271,7 @@ function WorkView({ auth, dnum, setError, onExit }) {
 
   const up = (patch) => setSt(s => Object.assign({}, s, patch));
 
-  // 状態保存（進捗シートのCurrentStageも更新される）
+  // save state (also updates CurrentStage on the progress sheet)
   const persist = useCallback(async (state) => {
     const s = state || stRef.current;
     await api('saveState', { name: auth.name, pin: auth.pin, dnum, state: s, stage: STAGE_SHEET[s.stage] });
@@ -277,7 +283,7 @@ function WorkView({ auth, dnum, setError, onExit }) {
     setBusy('');
   };
 
-  // Doc保存＋ステップ遷移
+  // save a Google Doc + move to the next step
   const advance = async (docType, content, nextStage, extraPatch) => {
     setBusy('doc'); setError('');
     try {
@@ -292,12 +298,12 @@ function WorkView({ auth, dnum, setError, onExit }) {
     setBusy('');
   };
 
-  if (!st) return <div className="text-center mt-16"><Spinner text="読み込み中..." /></div>;
+  if (!st) return <div className="text-center mt-16"><Spinner text="Loading..." /></div>;
 
   const SaveBtn = () => (
     <button onClick={manualSave} disabled={!!busy}
       className="text-sm text-gray-500 border rounded-lg px-3 py-1 hover:bg-gray-50">
-      {busy === 'save' ? '保存中...' : '💾 途中保存'}
+      {busy === 'save' ? 'Saving...' : '💾 Save progress'}
     </button>
   );
 
@@ -319,37 +325,42 @@ function WorkView({ auth, dnum, setError, onExit }) {
   );
 }
 
-/* ---------- ① 下書き入力 ---------- */
+/* ---------- ① Draft ---------- */
 function DraftStep({ st, up, busy, advance }) {
   return (
     <div>
-      <h3 className="font-bold mb-1">下書きを入力してください</h3>
-      <p className="text-sm text-gray-500 mb-3">手書きの下書き（D#-a）を見ながらタイプしてください。日本語で分からないところは<b>英語のまま</b>で大丈夫です。</p>
+      <h3 className="font-bold mb-1">Type your draft</h3>
+      <p className="text-sm text-gray-500 mb-3">Type your handwritten draft here. If you don't know a word in Japanese, it's OK to <b>leave it in English</b>.</p>
       <textarea value={st.draft} onChange={e => up({ draft: e.target.value })}
         rows={12} className="w-full border-2 border-gray-200 rounded-xl p-4 focus:border-terra-400 outline-none"
-        placeholder="ここに下書きをタイプ..." />
+        placeholder="Type your draft here..." />
       <div className="mt-4 text-right">
         <button disabled={!st.draft.trim() || !!busy}
           onClick={() => advance('original', st.draft, 'english', { englishText: st.draft })}
           className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white font-bold px-6 py-2 rounded-lg">
-          {busy === 'doc' ? '保存中...' : '保存して英語チェックへ →'}
+          {busy === 'doc' ? 'Saving...' : 'Save & go to English Check →'}
         </button>
       </div>
     </div>
   );
 }
 
-/* ---------- ② 英語チェック ---------- */
+/* ---------- ② English Check ---------- */
 function EnglishStep({ st, up, busy, setBusy, advance, auth, setError }) {
   const runCheck = async () => {
     setBusy('check'); setError('');
     try {
       const d = await api('checkEnglish', { name: auth.name, pin: auth.pin, text: st.englishText });
-      if (d.safetyBlocked) { setError('チェックがブロックされました。文章を確認してもう一度試してください。'); }
-      up({ englishItems: (d.items || []).map(it => Object.assign({ resolved: false, own: '' }, it)) });
-      if ((d.items || []).length === 0) setError('');
+      if (d.safetyBlocked) { setError('The check was blocked. Please review your text and try again.'); }
+      // Safety net: only keep items that actually contain Latin letters (never katakana)
+      const items = (d.items || []).filter(it => /[A-Za-z]/.test(String(it.english)));
+      up({ englishItems: items.map(it => Object.assign({ resolved: false, own: '' }, it)) });
     } catch (e) { setError(e.message); }
     setBusy('');
+  };
+
+  const setItem = (idx, patch) => {
+    up({ englishItems: st.englishItems.map((x, i) => i === idx ? Object.assign({}, x, patch) : x) });
   };
 
   const applyReplace = (idx, replacement) => {
@@ -358,30 +369,44 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError }) {
     if (text.includes(item.english)) {
       text = text.replace(item.english, replacement);
     }
-    const items = st.englishItems.map((it, i) => i === idx ? Object.assign({}, it, { resolved: true, chosen: replacement }) : it);
-    up({ englishText: text, englishItems: items });
+    up({
+      englishText: text,
+      englishItems: st.englishItems.map((it, i) => i === idx
+        ? Object.assign({}, it, { resolved: true, chosen: replacement, applied: true }) : it)
+    });
   };
 
-  const skip = (idx) => {
-    const items = st.englishItems.map((it, i) => i === idx ? Object.assign({}, it, { resolved: true, chosen: '(そのまま)' }) : it);
-    up({ englishItems: items });
+  const skip = (idx) => setItem(idx, { resolved: true, chosen: '(kept as is)', applied: false });
+
+  // Undo: put the original English back and reopen the item
+  const undo = (idx) => {
+    const item = st.englishItems[idx];
+    let text = st.englishText;
+    if (item.applied && item.chosen && text.includes(item.chosen)) {
+      text = text.replace(item.chosen, item.english);
+    }
+    up({
+      englishText: text,
+      englishItems: st.englishItems.map((it, i) => i === idx
+        ? Object.assign({}, it, { resolved: false, chosen: undefined, applied: false }) : it)
+    });
   };
 
   const unresolved = st.englishItems.filter(it => !it.resolved).length;
 
   return (
     <div>
-      <h3 className="font-bold mb-1">英語の部分を日本語にしましょう</h3>
-      <p className="text-sm text-gray-500 mb-3">「英語をチェック」を押すと、英語の部分と言い換え候補が3つずつ出ます。候補から選ぶか、自分で入力してください。テキストは下でいつでも直接編集できます。</p>
+      <h3 className="font-bold mb-1">Replace the English parts with Japanese</h3>
+      <p className="text-sm text-gray-500 mb-3">Press "Check English" to find the English parts, each with 3 suggested replacements. Pick one, or type your own. You can also edit the text below directly at any time. (Katakana words are left as they are.)</p>
       <textarea value={st.englishText} onChange={e => up({ englishText: e.target.value })}
         rows={10} className="w-full border-2 border-gray-200 rounded-xl p-4 focus:border-terra-400 outline-none" />
       <div className="mt-3 flex gap-3 items-center">
         <button onClick={runCheck} disabled={!!busy || !st.englishText.trim()}
           className="bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-300 text-white font-bold px-5 py-2 rounded-lg">
-          {busy === 'check' ? <Spinner text="チェック中..." /> : '🔍 英語をチェック'}
+          {busy === 'check' ? <Spinner text="Checking..." /> : '🔍 Check English'}
         </button>
         {st.englishItems.length > 0 && unresolved === 0 &&
-          <span className="text-green-600 text-sm font-bold">✓ すべて確認しました</span>}
+          <span className="text-green-600 text-sm font-bold">✓ All items resolved</span>}
       </div>
 
       {st.englishItems.length > 0 && (
@@ -390,7 +415,12 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError }) {
             <div key={idx} className={'border rounded-xl p-4 ' + (it.resolved ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-300')}>
               <div className="flex justify-between items-start">
                 <div className="font-bold text-red-600">"{it.english}"</div>
-                {it.resolved && <span className="text-xs text-green-700 font-bold">✓ {it.chosen}</span>}
+                {it.resolved && (
+                  <span className="text-xs text-green-700 font-bold flex items-center gap-2">
+                    ✓ {it.chosen}
+                    <button onClick={() => undo(idx)} className="text-gray-400 underline font-normal">Undo</button>
+                  </span>
+                )}
               </div>
               {it.note && <div className="text-xs text-gray-500 mt-1">{it.note}</div>}
               {!it.resolved && (
@@ -403,11 +433,11 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError }) {
                   ))}
                   <div className="flex gap-2 pt-1">
                     <input value={it.own}
-                      onChange={e => up({ englishItems: st.englishItems.map((x, i) => i === idx ? Object.assign({}, x, { own: e.target.value }) : x) })}
-                      className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="自分で入力する場合はここに..." />
+                      onChange={e => setItem(idx, { own: e.target.value })}
+                      className="flex-1 border rounded-lg px-3 py-1.5 text-sm" placeholder="Or type your own replacement..." />
                     <button onClick={() => it.own.trim() && applyReplace(idx, it.own.trim())}
-                      className="bg-terra-400 hover:bg-terra-500 text-white text-sm font-bold px-4 rounded-lg">適用</button>
-                    <button onClick={() => skip(idx)} className="text-xs text-gray-400 underline">スキップ</button>
+                      className="bg-terra-400 hover:bg-terra-500 text-white text-sm font-bold px-4 rounded-lg">Use</button>
+                    <button onClick={() => skip(idx)} className="text-xs text-gray-400 underline">Skip</button>
                   </div>
                 </div>
               )}
@@ -420,14 +450,14 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError }) {
         <button disabled={!!busy || !st.englishText.trim()}
           onClick={() => advance('english', st.englishText, 'deepl', { deeplText: st.englishText })}
           className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white font-bold px-6 py-2 rounded-lg">
-          {busy === 'doc' ? '保存中...' : '完了してDeepL照合へ →'}
+          {busy === 'doc' ? 'Saving...' : 'Done — go to DeepL Check →'}
         </button>
       </div>
     </div>
   );
 }
 
-/* ---------- ③ DeepL照合 ---------- */
+/* ---------- ③ DeepL Check ---------- */
 function DeepLStep({ st, up, busy, setBusy, advance, auth, setError }) {
   const translate = async () => {
     setBusy('deepl'); setError('');
@@ -439,58 +469,58 @@ function DeepLStep({ st, up, busy, setBusy, advance, auth, setError }) {
   };
 
   const docContent = st.deeplText +
-    '\n\n----------------\n【振り返り①】\n' +
-    '■ 分かりにくかった部分:\n' + (st.ref1a || '(未記入)') +
-    '\n\n■ 苦労した点:\n' + (st.ref1b || '(未記入)');
+    '\n\n----------------\nReflection 1 (optional)\n' +
+    '- Parts that were hard to express:\n' + (st.ref1a || '(not filled in)') +
+    '\n\n- What I struggled with:\n' + (st.ref1b || '(not filled in)');
 
   return (
     <div>
-      <h3 className="font-bold mb-1">DeepLの英訳と見比べて、日本語を直しましょう</h3>
-      <p className="text-sm text-gray-500 mb-3">右の英訳が自分の言いたいことと合っているか確認してください。合わないところは左の日本語を直して、もう一度「英訳を見る」を押します。納得いくまでくり返してください。</p>
+      <h3 className="font-bold mb-1">Compare with DeepL's English and revise your Japanese</h3>
+      <p className="text-sm text-gray-500 mb-3">Check whether the English on the right matches what you meant. If not, revise the Japanese on the left and press "Translate" again. Repeat until you're satisfied.</p>
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
-          <div className="text-xs font-bold text-gray-500 mb-1">あなたの日本語（編集できます）</div>
+          <div className="text-xs font-bold text-gray-500 mb-1">Your Japanese (editable)</div>
           <textarea value={st.deeplText} onChange={e => up({ deeplText: e.target.value })}
             rows={12} className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-terra-400 outline-none" />
         </div>
         <div>
-          <div className="text-xs font-bold text-gray-500 mb-1">DeepLの英訳</div>
+          <div className="text-xs font-bold text-gray-500 mb-1">DeepL's English translation</div>
           <div className="w-full h-full max-h-80 min-h-[16rem] border-2 border-stone-200 bg-stone-50 rounded-xl p-3 text-sm whitespace-pre-wrap overflow-y-auto">
-            {st.deeplEn || <span className="text-gray-400">「英訳を見る」を押すとここに表示されます</span>}
+            {st.deeplEn || <span className="text-gray-400">Press "Translate" to see the English translation here</span>}
           </div>
         </div>
       </div>
       <div className="mt-3">
         <button onClick={translate} disabled={!!busy || !st.deeplText.trim()}
           className="bg-[#3D405B] hover:bg-[#2F3247] disabled:bg-gray-300 text-white font-bold px-5 py-2 rounded-lg">
-          {busy === 'deepl' ? <Spinner text="翻訳中..." /> : '🔁 英訳を見る'}
+          {busy === 'deepl' ? <Spinner text="Translating..." /> : '🔁 Translate'}
         </button>
       </div>
 
       <div className="mt-6 border-t pt-4">
-        <h4 className="font-bold text-sm mb-2">振り返り①</h4>
-        <label className="block text-xs text-gray-500 mb-1">分かりにくかった部分はどこですか？</label>
+        <h4 className="font-bold text-sm mb-2">Reflection 1 <span className="font-normal text-gray-400">(optional)</span></h4>
+        <label className="block text-xs text-gray-500 mb-1">Which parts were hard to express?</label>
         <textarea value={st.ref1a} onChange={e => up({ ref1a: e.target.value })} rows={2}
           className="w-full border rounded-lg p-2 text-sm mb-3" />
-        <label className="block text-xs text-gray-500 mb-1">苦労した点は何ですか？</label>
+        <label className="block text-xs text-gray-500 mb-1">What did you struggle with?</label>
         <textarea value={st.ref1b} onChange={e => up({ ref1b: e.target.value })} rows={2}
           className="w-full border rounded-lg p-2 text-sm" />
       </div>
 
       <div className="mt-4 text-right">
-        <button disabled={!!busy || !st.deeplText.trim() || !st.deeplEn || !st.ref1a.trim() || !st.ref1b.trim()}
-          onClick={() => advance('deepl', docContent, 'chat')}
+        <button disabled={!!busy || !st.deeplText.trim() || !st.deeplEn}
+          onClick={() => advance('deepl', docContent, 'chat', { chatDraft: st.deeplText })}
           className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white font-bold px-6 py-2 rounded-lg">
-          {busy === 'doc' ? '保存中...' : '完了してとらいくん添削へ →'}
+          {busy === 'doc' ? 'Saving...' : 'Done — go to Torai-kun Chat →'}
         </button>
-        {(!st.deeplEn || !st.ref1a.trim() || !st.ref1b.trim()) &&
-          <div className="text-xs text-gray-400 mt-1">※ 英訳の確認と振り返り①の記入が必要です</div>}
+        {!st.deeplEn &&
+          <div className="text-xs text-gray-400 mt-1">* Check the English translation at least once before continuing</div>}
       </div>
     </div>
   );
 }
 
-/* ---------- ④ とらいくん添削チャット ---------- */
+/* ---------- ④ Torai-kun Chat (chat left / your draft right) ---------- */
 function ChatStep({ st, up, busy, setBusy, advance, auth, dnum, setError, persist }) {
   const [input, setInput] = useState('');
   const bottomRef = useRef(null);
@@ -500,7 +530,12 @@ function ChatStep({ st, up, busy, setBusy, advance, auth, dnum, setError, persis
     bottomRef.current && bottomRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [st.chat.length, busy]);
 
-  // 初回: とらいくんのあいさつを取得
+  // initialize the editable draft pane from the DeepL-checked text
+  useEffect(() => {
+    if (!st.chatDraft) up({ chatDraft: st.deeplText });
+  }, []);
+
+  // first visit: get Torai-kun's greeting
   useEffect(() => {
     if (st.chat.length === 0 && !startedRef.current) {
       startedRef.current = true;
@@ -518,7 +553,7 @@ function ChatStep({ st, up, busy, setBusy, advance, auth, dnum, setError, persis
       const d = await api('chatTurn', { name: auth.name, pin: auth.pin, history });
       const newChat = [...history, { role: 'assistant', text: d.text }];
       up({ chat: newChat });
-      // チャットは長くなるので、毎ターン後に自動保存（失敗しても続行）
+      // auto-save after every turn (chat can get long); keep going even if it fails
       persist(Object.assign({}, st, { chat: newChat })).catch(() => {});
     } catch (e) { setError(e.message); }
     setBusy('');
@@ -532,95 +567,105 @@ function ChatStep({ st, up, busy, setBusy, advance, auth, dnum, setError, persis
   };
 
   const chatLog = st.chat.map(m =>
-    (m.role === 'user' ? '【学生】' : '【とらいくん】') + '\n' + m.text
+    (m.role === 'user' ? '[Student]' : '[Torai-kun]') + '\n' + m.text
   ).join('\n\n----------------\n\n');
 
   return (
     <div>
-      <h3 className="font-bold mb-1">とらいくん🐯に下書きを見てもらいましょう</h3>
-      <p className="text-sm text-gray-500 mb-3">一文ずつ添削が進みます。質問がなければ「次へ」と送ってください。下書きを送るときは「✏️ 下書きを入力欄に貼る」ボタンが使えます。</p>
+      <h3 className="font-bold mb-1">Get feedback from Torai-kun 🐯 — and revise your draft as you go</h3>
+      <p className="text-sm text-gray-500 mb-3">Torai-kun reviews one sentence at a time (reply "next" when you have no questions). Edit your draft in the right pane while you chat — it will carry over to the Final Draft page.</p>
 
-      <div className="border-2 border-terra-100 rounded-xl bg-terra-50/50 h-96 overflow-y-auto p-4 space-y-3">
-        {st.chat.map((m, i) => (
-          <div key={i} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
-            <div className={
-              'max-w-[85%] rounded-2xl px-4 py-2 text-sm chat-md ' +
-              (m.role === 'user' ? 'bg-terra-500 text-white' : 'bg-white border border-terra-200')
-            }>
-              {m.role === 'assistant' && <div className="text-xs font-bold text-terra-500 mb-1">🐯 とらいくん</div>}
-              {renderChatText(m.text)}
-            </div>
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* left: chat */}
+        <div>
+          <div className="text-xs font-bold text-gray-500 mb-1">Chat with Torai-kun</div>
+          <div className="border-2 border-terra-100 rounded-xl bg-terra-50/50 h-96 overflow-y-auto p-4 space-y-3">
+            {st.chat.map((m, i) => (
+              <div key={i} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
+                <div className={
+                  'max-w-[85%] rounded-2xl px-4 py-2 text-sm chat-md ' +
+                  (m.role === 'user' ? 'bg-terra-500 text-white' : 'bg-white border border-terra-200')
+                }>
+                  {m.role === 'assistant' && <div className="text-xs font-bold text-terra-500 mb-1">🐯 Torai-kun</div>}
+                  {renderChatText(m.text)}
+                </div>
+              </div>
+            ))}
+            {busy === 'chat' && <div className="text-sm"><Spinner text="Torai-kun is typing..." /></div>}
+            <div ref={bottomRef}></div>
           </div>
-        ))}
-        {busy === 'chat' && <div className="text-sm"><Spinner text="とらいくんが書いています..." /></div>}
-        <div ref={bottomRef}></div>
-      </div>
+          <div className="mt-2 flex gap-2">
+            <textarea value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
+              rows={2} className="flex-1 border-2 border-gray-200 rounded-xl p-3 text-sm focus:border-terra-400 outline-none"
+              placeholder="Type a message (Shift+Enter to send)" />
+            <button onClick={send} disabled={!!busy || !input.trim()}
+              className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white font-bold px-4 rounded-xl">Send</button>
+          </div>
+          <button onClick={() => setInput(st.chatDraft || st.deeplText)} className="mt-1 text-sm text-terra-600 underline">✏️ Paste my draft into the message box</button>
+        </div>
 
-      <div className="mt-3 flex gap-2">
-        <textarea value={input} onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
-          rows={2} className="flex-1 border-2 border-gray-200 rounded-xl p-3 text-sm focus:border-terra-400 outline-none"
-          placeholder="メッセージを入力（Shift+Enterで改行）" />
-        <button onClick={send} disabled={!!busy || !input.trim()}
-          className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white font-bold px-5 rounded-xl">送信</button>
-      </div>
-      <div className="mt-2 flex justify-between items-center">
-        <button onClick={() => setInput(st.deeplText)} className="text-sm text-terra-600 underline">✏️ 下書きを入力欄に貼る</button>
-        <button disabled={!!busy || st.chat.length < 4}
-          onClick={() => advance('chat', chatLog, 'final', { finalText: st.finalText || st.deeplText })}
-          className="bg-terra-700 hover:bg-terra-800 disabled:bg-gray-300 text-white font-bold px-5 py-2 rounded-lg text-sm">
-          {busy === 'doc' ? '保存中...' : '添削を終えて最終稿へ →'}
-        </button>
+        {/* right: editable draft */}
+        <div>
+          <div className="text-xs font-bold text-gray-500 mb-1">My draft (edit freely while you chat)</div>
+          <textarea value={st.chatDraft} onChange={e => up({ chatDraft: e.target.value })}
+            className="w-full h-96 border-2 border-gray-200 rounded-xl p-3 text-sm focus:border-terra-400 outline-none" />
+          <div className="mt-2 text-right">
+            <button disabled={!!busy || st.chat.length < 4}
+              onClick={() => advance('chat', chatLog, 'final', { finalText: st.chatDraft || st.deeplText })}
+              className="bg-terra-700 hover:bg-terra-800 disabled:bg-gray-300 text-white font-bold px-5 py-2 rounded-lg text-sm">
+              {busy === 'doc' ? 'Saving...' : 'Finish corrections → Final Draft'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ---------- ⑤ 最終稿 ---------- */
+/* ---------- ⑤ Final Draft ---------- */
 function FinalStep({ st, up, busy, advance }) {
   const docContent = st.finalText +
-    '\n\n----------------\n【振り返り②】\n' +
-    '■ 分かりにくかった部分:\n' + (st.ref2a || '(未記入)') +
-    '\n\n■ 苦労した点:\n' + (st.ref2b || '(未記入)');
+    '\n\n----------------\nReflection 2 (optional)\n' +
+    '- Parts that were hard to express:\n' + (st.ref2a || '(not filled in)') +
+    '\n\n- What I struggled with:\n' + (st.ref2b || '(not filled in)');
 
   return (
     <div>
-      <h3 className="font-bold mb-1">最終稿を書きましょう</h3>
-      <p className="text-sm text-gray-500 mb-3">とらいくんの指摘を思い出しながら、<b>自分の言葉で</b>書き直してください。（最初はDeepL照合後の文章が入っています）</p>
+      <h3 className="font-bold mb-1">Write your final draft</h3>
+      <p className="text-sm text-gray-500 mb-3">Rewrite it <b>in your own words</b>, keeping Torai-kun's feedback in mind. (It starts with the draft you revised on the chat page.)</p>
       <textarea value={st.finalText} onChange={e => up({ finalText: e.target.value })}
         rows={12} className="w-full border-2 border-gray-200 rounded-xl p-4 focus:border-terra-400 outline-none" />
 
       <div className="mt-5 border-t pt-4">
-        <h4 className="font-bold text-sm mb-2">振り返り②</h4>
-        <label className="block text-xs text-gray-500 mb-1">分かりにくかった部分はどこですか？</label>
+        <h4 className="font-bold text-sm mb-2">Reflection 2 <span className="font-normal text-gray-400">(optional)</span></h4>
+        <label className="block text-xs text-gray-500 mb-1">Which parts were hard to express?</label>
         <textarea value={st.ref2a} onChange={e => up({ ref2a: e.target.value })} rows={2}
           className="w-full border rounded-lg p-2 text-sm mb-3" />
-        <label className="block text-xs text-gray-500 mb-1">苦労した点は何ですか？</label>
+        <label className="block text-xs text-gray-500 mb-1">What did you struggle with?</label>
         <textarea value={st.ref2b} onChange={e => up({ ref2b: e.target.value })} rows={2}
           className="w-full border rounded-lg p-2 text-sm" />
       </div>
 
       <div className="mt-4 text-right">
-        <button disabled={!!busy || !st.finalText.trim() || !st.ref2a.trim() || !st.ref2b.trim()}
+        <button disabled={!!busy || !st.finalText.trim()}
           onClick={() => advance('final', docContent, 'done')}
           className="bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white font-bold px-8 py-2 rounded-lg">
-          {busy === 'doc' ? '提出中...' : '🎉 提出する'}
+          {busy === 'doc' ? 'Submitting...' : '🎉 Submit'}
         </button>
-        {(!st.ref2a.trim() || !st.ref2b.trim()) &&
-          <div className="text-xs text-gray-400 mt-1">※ 振り返り②の記入が必要です</div>}
       </div>
     </div>
   );
 }
 
-/* ---------- 完了 ---------- */
+/* ---------- Done ---------- */
 function DoneStep({ onExit }) {
   return (
     <div className="text-center py-10">
       <div className="text-5xl mb-4">🎉</div>
-      <h3 className="text-xl font-bold text-green-700 mb-2">提出しました！</h3>
-      <p className="text-gray-500 text-sm mb-6">おつかれさまでした。先生に通知メールが送られました。<br />フィードバックが終わると、あなたにもメールでお知らせが届きます。</p>
-      <button onClick={onExit} className="bg-terra-500 hover:bg-terra-600 text-white font-bold px-6 py-2 rounded-lg">D#メニューに戻る</button>
+      <h3 className="text-xl font-bold text-green-700 mb-2">Submitted!</h3>
+      <p className="text-gray-500 text-sm mb-6">Great work! Your teacher has been notified by email.<br />You'll also get an email when your feedback is ready.</p>
+      <button onClick={onExit} className="bg-terra-500 hover:bg-terra-600 text-white font-bold px-6 py-2 rounded-lg">Back to D# Menu</button>
     </div>
   );
 }
