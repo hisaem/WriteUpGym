@@ -19,7 +19,7 @@ tailwind.config = {
 };
 </script>
 <style>
-  body { font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif; }
+  body { font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif; color: #4A4A4A; }
   textarea { line-height: 1.9; }
   .chat-md strong { font-weight: 700; }
   .chat-md blockquote { border-left: 3px solid #E07A5F; padding-left: 8px; color: #A64A34; margin: 4px 0; }
@@ -33,7 +33,7 @@ tailwind.config = {
  * Write-Up Gym — index.html (prototype)
  * Paste your deployed GAS web app /exec URL below
  * ================================================================ */
-const API_URL = 'https://script.google.com/macros/s/AKfycbyVDv5IfpIwsGwjQluEN7XSHHYkAco-GmhU5Up41lmETjiALXA6wS8fyKunk7DGTtEwYQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxCyQbmyDDpAvpljgIo8B5W_bKdN1Os4_D56ZdJBp1ZKsmvJL_-JEp3-jNhjA3DeYJ1bg/exec';
 
 const { useState, useEffect, useRef, useCallback } = React;
 
@@ -119,7 +119,7 @@ const STAGE_BADGE = {
 function emptyState() {
   return {
     stage: 'draft', draft: '', handwritten: null,
-    englishText: '', englishItems: [],
+    englishText: '', englishItems: [], englishChat: [],
     deeplText: '', deeplEn: '', ref1a: '', ref1b: '',
     chat: [], chatDraft: '', finalText: '', ref2a: '', ref2b: ''
   };
@@ -191,6 +191,7 @@ function App() {
   });
   const [view, setView] = useState('login'); // login | menu | work
   const [dnum, setDnum] = useState(null);
+  const [dtitle, setDtitle] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => { if (auth) setView('menu'); }, []);
@@ -214,8 +215,8 @@ function App() {
       </header>
       <ErrorBanner msg={error} onClose={() => setError('')} />
       {view === 'login' && <LoginView onLogin={(a) => { setAuth(a); setView('menu'); }} setError={setError} />}
-      {view === 'menu' && auth && <MenuView auth={auth} onSelect={(n) => { setDnum(n); setView('work'); }} setError={setError} />}
-      {view === 'work' && auth && dnum && <WorkView auth={auth} dnum={dnum} setError={setError} onExit={() => { setView('menu'); setDnum(null); }} />}
+      {view === 'menu' && auth && <MenuView auth={auth} onSelect={(n, t) => { setDnum(n); setDtitle(t || ''); setView('work'); }} setError={setError} />}
+      {view === 'work' && auth && dnum && <WorkView auth={auth} dnum={dnum} dtitle={dtitle} setError={setError} onExit={() => { setView('menu'); setDnum(null); }} />}
     </div>
   );
 }
@@ -292,10 +293,12 @@ function MenuView({ auth, onSelect, setError }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {Array.from({ length: progress.numDs }, (_, i) => i + 1).map(n => {
           const info = progress.items['D' + n];
+          const title = (progress.titles || {})[n];
           return (
-            <button key={n} onClick={() => onSelect(n)}
+            <button key={n} onClick={() => onSelect(n, title)}
               className="border-2 border-terra-200 hover:border-terra-500 rounded-xl p-4 text-left bg-terra-50 hover:bg-terra-100">
               <div className="text-xl font-bold text-terra-700">D{n}</div>
+              {title && <div className="text-xs text-gray-600 font-bold mt-0.5">{title}</div>}
               {info ? (
                 <div>
                   <span className={'inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold ' + (STAGE_BADGE[info.stage] || 'bg-gray-200')}>
@@ -313,7 +316,7 @@ function MenuView({ auth, onSelect, setError }) {
 }
 
 /* ---------- Work view (all steps) ---------- */
-function WorkView({ auth, dnum, setError, onExit }) {
+function WorkView({ auth, dnum, dtitle, setError, onExit }) {
   const [st, setSt] = useState(null);     // working state
   const [busy, setBusy] = useState('');   // '' | 'save' | 'check' | 'deepl' | 'chat' | 'doc'
   const [docLinks, setDocLinks] = useState({}); // docType → Google Doc URL
@@ -372,13 +375,13 @@ function WorkView({ auth, dnum, setError, onExit }) {
   return (
     <div className="bg-white rounded-2xl shadow p-6 sm:p-8">
       <div className="flex justify-between items-start">
-        <h2 className="text-xl font-bold text-gray-700 mb-2">D{dnum}</h2>
+        <h2 className="text-xl font-bold text-gray-700 mb-2">D{dnum}{dtitle && <span className="text-base font-normal text-gray-500"> — {dtitle}</span>}</h2>
         {st.stage !== 'done' && <SaveBtn />}
       </div>
       <Stepper stage={st.stage} docLinks={docLinks} />
 
       {st.stage === 'draft' && <DraftStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} dnum={dnum} setError={setError} />}
-      {st.stage === 'english' && <EnglishStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} setError={setError} />}
+      {st.stage === 'english' && <EnglishStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} setError={setError} persist={persist} />}
       {st.stage === 'deepl' && <DeepLStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} setError={setError} />}
       {st.stage === 'chat' && <ChatStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} dnum={dnum} setError={setError} persist={persist} />}
       {st.stage === 'final' && <FinalStep st={st} up={up} busy={busy} advance={advance} />}
@@ -477,7 +480,39 @@ function DraftStep({ st, up, busy, setBusy, advance, auth, dnum, setError }) {
 }
 
 /* ---------- ② English Check ---------- */
-function EnglishStep({ st, up, busy, setBusy, advance, auth, setError }) {
+function EnglishStep({ st, up, busy, setBusy, advance, auth, setError, persist }) {
+  const [vInput, setVInput] = useState('');
+  const vBottomRef = useRef(null);
+
+  useEffect(() => {
+    vBottomRef.current && vBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [(st.englishChat || []).length, busy]);
+
+  // context for Torai-kun: the detected items and their suggestions
+  const itemsText = st.englishItems.map(it => {
+    const sugs = (it.suggestions || []).map(s => (typeof s === 'string') ? s : s.jp).join(' / ');
+    return '"' + it.english + '" → ' + sugs;
+  }).join('\n');
+
+  const sendVocab = async () => {
+    const t = vInput.trim();
+    if (!t || busy) return;
+    setVInput('');
+    setBusy('vchat'); setError('');
+    const history = [...(st.englishChat || []), { role: 'user', text: t }];
+    up({ englishChat: history });
+    try {
+      const d = await api('vocabChat', {
+        name: auth.name, pin: auth.pin, history,
+        draft: st.englishText, itemsText
+      });
+      const newChat = [...history, { role: 'assistant', text: d.text }];
+      up({ englishChat: newChat });
+      persist(Object.assign({}, st, { englishChat: newChat })).catch(() => {});
+    } catch (e) { setError(e.message); }
+    setBusy('');
+  };
+
   const runCheck = async () => {
     setBusy('check'); setError('');
     try {
@@ -598,6 +633,38 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError }) {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {(st.englishItems.length > 0 || (st.englishChat || []).length > 0) && (
+        <div className="mt-5">
+          <div className="text-xs font-bold text-gray-500 mb-1">Questions about these words? Ask Torai-kun 🐯</div>
+          <div className="border-2 border-terra-100 rounded-xl bg-terra-50/50 max-h-64 overflow-y-auto p-3 space-y-2">
+            {(st.englishChat || []).length === 0 && (
+              <div className="text-xs text-gray-400">Ask anything — nuance differences, how to use a word, or which suggestion fits your sentence best.</div>
+            )}
+            {(st.englishChat || []).map((m, i) => (
+              <div key={i} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
+                <div className={
+                  'max-w-[85%] rounded-2xl px-3 py-1.5 text-sm chat-md ' +
+                  (m.role === 'user' ? 'bg-terra-500 text-white' : 'bg-white border border-terra-200')
+                }>
+                  {m.role === 'assistant' && <div className="text-xs font-bold text-terra-500 mb-0.5">🐯 Torai-kun</div>}
+                  {renderChatText(m.text)}
+                </div>
+              </div>
+            ))}
+            {busy === 'vchat' && <div className="text-sm"><Spinner text="Torai-kun is typing..." /></div>}
+            <div ref={vBottomRef}></div>
+          </div>
+          <div className="mt-2 flex gap-2">
+            <textarea value={vInput} onChange={e => setVInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendVocab(); } }}
+              rows={1} className="flex-1 border-2 border-gray-200 rounded-xl p-2 text-sm focus:border-terra-400 outline-none"
+              placeholder="Ask about a word... (Shift+Enter to send)" />
+            <button onClick={sendVocab} disabled={!!busy || !vInput.trim()}
+              className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white text-sm font-bold px-4 rounded-xl">Send</button>
+          </div>
         </div>
       )}
 
