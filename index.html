@@ -33,7 +33,7 @@ tailwind.config = {
  * Write-Up Gym — index.html (prototype)
  * Paste your deployed GAS web app /exec URL below
  * ================================================================ */
-const API_URL = 'https://script.google.com/macros/s/AKfycbw6Rt7WQ18wsgc7KUW03g6cfYkbwOF51E0w5S8EbQd3Id6lvGlkx_61WO5JjTLcCvwpuA/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyGdbA5o44pNSg5UtPJbv8sYHBWu2dpw0Rh1vwEH7uVDLHUiJdqHWe1xr-cAYbSq0-2Iw/exec';
 
 const { useState, useEffect, useRef, useCallback } = React;
 
@@ -120,7 +120,7 @@ function emptyState() {
   return {
     stage: 'draft', draft: '', handwritten: null,
     englishText: '', englishItems: [], englishChat: [],
-    deeplText: '', deeplEn: '', ref1a: '', ref1b: '',
+    deeplText: '', deeplEn: '', deeplChat: [], ref1a: '', ref1b: '',
     chat: [], chatDraft: '', finalText: '', ref2a: '', ref2b: ''
   };
 }
@@ -481,7 +481,7 @@ function WorkView({ auth, dnum, dtitle, setError, onExit }) {
 
       {st.stage === 'draft' && <DraftStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} dnum={dnum} setError={setError} />}
       {st.stage === 'english' && <EnglishStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} setError={setError} persist={persist} />}
-      {st.stage === 'deepl' && <DeepLStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} setError={setError} />}
+      {st.stage === 'deepl' && <DeepLStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} setError={setError} persist={persist} />}
       {st.stage === 'chat' && <ChatStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} dnum={dnum} setError={setError} persist={persist} />}
       {st.stage === 'final' && <FinalStep st={st} up={up} busy={busy} advance={advance} />}
       {st.stage === 'done' && <DoneStep onExit={onExit} docLinks={docLinks} />}
@@ -779,12 +779,38 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError, persist }
 }
 
 /* ---------- ③ DeepL Check ---------- */
-function DeepLStep({ st, up, busy, setBusy, advance, auth, setError }) {
+function DeepLStep({ st, up, busy, setBusy, advance, auth, setError, persist }) {
+  const [dInput, setDInput] = useState('');
+  const dBottomRef = useRef(null);
+
+  useEffect(() => {
+    dBottomRef.current && dBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [(st.deeplChat || []).length, busy]);
+
   const translate = async () => {
     setBusy('deepl'); setError('');
     try {
       const d = await api('deeplTranslate', { name: auth.name, pin: auth.pin, text: st.deeplText });
       up({ deeplEn: d.translation });
+    } catch (e) { setError(e.message); }
+    setBusy('');
+  };
+
+  const sendDeepl = async () => {
+    const t = dInput.trim();
+    if (!t || busy) return;
+    setDInput('');
+    setBusy('dchat'); setError('');
+    const history = [...(st.deeplChat || []), { role: 'user', text: t }];
+    up({ deeplChat: history });
+    try {
+      const d = await api('deeplChat', {
+        name: auth.name, pin: auth.pin, history,
+        draft: st.deeplText, translation: st.deeplEn
+      });
+      const newChat = [...history, { role: 'assistant', text: d.text }];
+      up({ deeplChat: newChat });
+      persist(Object.assign({}, st, { deeplChat: newChat })).catch(() => {});
     } catch (e) { setError(e.message); }
     setBusy('');
   };
@@ -816,6 +842,36 @@ function DeepLStep({ st, up, busy, setBusy, advance, auth, setError }) {
           className="bg-[#3D405B] hover:bg-[#2F3247] disabled:bg-gray-300 text-white font-bold px-5 py-2 rounded-lg">
           {busy === 'deepl' ? <Spinner text="Translating..." /> : '🔁 Translate'}
         </button>
+      </div>
+
+      <div className="mt-5">
+        <div className="text-xs font-bold text-gray-500 mb-1">Questions? Ask Torai-kun 🐯</div>
+        <div className="border-2 border-terra-100 rounded-xl bg-terra-50/50 max-h-64 overflow-y-auto p-3 space-y-2">
+          {(st.deeplChat || []).length === 0 && (
+            <div className="text-xs text-gray-400">Ask anything — why DeepL translated something a certain way, or how to fix your Japanese so it says what you mean.</div>
+          )}
+          {(st.deeplChat || []).map((m, i) => (
+            <div key={i} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
+              <div className={
+                'max-w-[85%] rounded-2xl px-3 py-1.5 text-sm chat-md ' +
+                (m.role === 'user' ? 'bg-terra-500 text-white' : 'bg-white border border-terra-200')
+              }>
+                {m.role === 'assistant' && <div className="text-xs font-bold text-terra-500 mb-0.5">🐯 Torai-kun</div>}
+                {renderChatText(m.text)}
+              </div>
+            </div>
+          ))}
+          {busy === 'dchat' && <div className="text-sm"><Spinner text="Torai-kun is typing..." /></div>}
+          <div ref={dBottomRef}></div>
+        </div>
+        <div className="mt-2 flex gap-2">
+          <textarea value={dInput} onChange={e => setDInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendDeepl(); } }}
+            rows={1} className="flex-1 border-2 border-gray-200 rounded-xl p-2 text-sm focus:border-terra-400 outline-none"
+            placeholder="Ask a question... (Shift+Enter to send)" />
+          <button onClick={sendDeepl} disabled={!!busy || !dInput.trim()}
+            className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white text-sm font-bold px-4 rounded-xl">Send</button>
+        </div>
       </div>
 
       <div className="mt-6 border-t pt-4">
