@@ -33,7 +33,7 @@ tailwind.config = {
  * Write-Up Gym — index.html (prototype)
  * Paste your deployed GAS web app /exec URL below
  * ================================================================ */
-const API_URL = 'https://script.google.com/macros/s/AKfycbyGdbA5o44pNSg5UtPJbv8sYHBWu2dpw0Rh1vwEH7uVDLHUiJdqHWe1xr-cAYbSq0-2Iw/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwrHpawvVRPCB2ySic6poT5-cbYBj-RWZd6JO5ZpCZ9IehifO02LsQfx1LgeK0yvvTDFg/exec';
 
 const { useState, useEffect, useRef, useCallback } = React;
 
@@ -581,11 +581,14 @@ function DraftStep({ st, up, busy, setBusy, advance, auth, dnum, setError }) {
 /* ---------- ② English Check ---------- */
 function EnglishStep({ st, up, busy, setBusy, advance, auth, setError, persist }) {
   const [vInput, setVInput] = useState('');
-  const vBottomRef = useRef(null);
+  const vListRef = useRef(null);
+  const vLastRef = useRef(null);
 
+  // show the TOP of the newest message (so long replies start from the beginning)
   useEffect(() => {
-    vBottomRef.current && vBottomRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [(st.englishChat || []).length, busy]);
+    const c = vListRef.current, m = vLastRef.current;
+    if (c && m) c.scrollTop = Math.max(0, m.offsetTop - 8);
+  }, [(st.englishChat || []).length]);
 
   // context for Torai-kun: the detected items and their suggestions
   const itemsText = st.englishItems.map(it => {
@@ -738,12 +741,12 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError, persist }
       {(st.englishItems.length > 0 || (st.englishChat || []).length > 0) && (
         <div className="mt-5">
           <div className="text-xs font-bold text-gray-500 mb-1">Questions about these words? Ask Torai-kun 🐯</div>
-          <div className="border-2 border-terra-100 rounded-xl bg-terra-50/50 max-h-64 overflow-y-auto p-3 space-y-2">
+          <div ref={vListRef} className="relative border-2 border-terra-100 rounded-xl bg-terra-50/50 max-h-64 overflow-y-auto p-3 space-y-2">
             {(st.englishChat || []).length === 0 && (
               <div className="text-xs text-gray-400">Ask anything — nuance differences, how to use a word, or which suggestion fits your sentence best.</div>
             )}
-            {(st.englishChat || []).map((m, i) => (
-              <div key={i} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
+            {(st.englishChat || []).map((m, i, arr) => (
+              <div key={i} ref={i === arr.length - 1 ? vLastRef : null} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
                 <div className={
                   'max-w-[85%] rounded-2xl px-3 py-1.5 text-sm chat-md ' +
                   (m.role === 'user' ? 'bg-terra-500 text-white' : 'bg-white border border-terra-200')
@@ -754,7 +757,6 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError, persist }
               </div>
             ))}
             {busy === 'vchat' && <div className="text-sm"><Spinner text="Torai-kun is typing..." /></div>}
-            <div ref={vBottomRef}></div>
           </div>
           <div className="mt-2 flex gap-2">
             <textarea value={vInput} onChange={e => setVInput(e.target.value)}
@@ -781,11 +783,14 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError, persist }
 /* ---------- ③ DeepL Check ---------- */
 function DeepLStep({ st, up, busy, setBusy, advance, auth, setError, persist }) {
   const [dInput, setDInput] = useState('');
-  const dBottomRef = useRef(null);
+  const dListRef = useRef(null);
+  const dLastRef = useRef(null);
 
+  // show the TOP of the newest message (so long replies start from the beginning)
   useEffect(() => {
-    dBottomRef.current && dBottomRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [(st.deeplChat || []).length, busy]);
+    const c = dListRef.current, m = dLastRef.current;
+    if (c && m) c.scrollTop = Math.max(0, m.offsetTop - 8);
+  }, [(st.deeplChat || []).length]);
 
   const translate = async () => {
     setBusy('deepl'); setError('');
@@ -846,12 +851,12 @@ function DeepLStep({ st, up, busy, setBusy, advance, auth, setError, persist }) 
 
       <div className="mt-5">
         <div className="text-xs font-bold text-gray-500 mb-1">Questions? Ask Torai-kun 🐯</div>
-        <div className="border-2 border-terra-100 rounded-xl bg-terra-50/50 max-h-64 overflow-y-auto p-3 space-y-2">
+        <div ref={dListRef} className="relative border-2 border-terra-100 rounded-xl bg-terra-50/50 max-h-64 overflow-y-auto p-3 space-y-2">
           {(st.deeplChat || []).length === 0 && (
             <div className="text-xs text-gray-400">Ask anything — why DeepL translated something a certain way, or how to fix your Japanese so it says what you mean.</div>
           )}
-          {(st.deeplChat || []).map((m, i) => (
-            <div key={i} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
+          {(st.deeplChat || []).map((m, i, arr) => (
+            <div key={i} ref={i === arr.length - 1 ? dLastRef : null} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
               <div className={
                 'max-w-[85%] rounded-2xl px-3 py-1.5 text-sm chat-md ' +
                 (m.role === 'user' ? 'bg-terra-500 text-white' : 'bg-white border border-terra-200')
@@ -862,7 +867,6 @@ function DeepLStep({ st, up, busy, setBusy, advance, auth, setError, persist }) 
             </div>
           ))}
           {busy === 'dchat' && <div className="text-sm"><Spinner text="Torai-kun is typing..." /></div>}
-          <div ref={dBottomRef}></div>
         </div>
         <div className="mt-2 flex gap-2">
           <textarea value={dInput} onChange={e => setDInput(e.target.value)}
@@ -900,12 +904,15 @@ function DeepLStep({ st, up, busy, setBusy, advance, auth, setError, persist }) 
 /* ---------- ④ Torai-kun Chat (chat left / your draft right) ---------- */
 function ChatStep({ st, up, busy, setBusy, advance, auth, dnum, setError, persist }) {
   const [input, setInput] = useState('');
-  const bottomRef = useRef(null);
+  const listRef = useRef(null);
+  const lastMsgRef = useRef(null);
   const startedRef = useRef(false);
 
+  // show the TOP of the newest message (so long replies start from the beginning)
   useEffect(() => {
-    bottomRef.current && bottomRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [st.chat.length, busy]);
+    const c = listRef.current, m = lastMsgRef.current;
+    if (c && m) c.scrollTop = Math.max(0, m.offsetTop - 8);
+  }, [st.chat.length]);
 
   // initialize the editable draft pane from the DeepL-checked text
   useEffect(() => {
@@ -956,9 +963,9 @@ function ChatStep({ st, up, busy, setBusy, advance, auth, dnum, setError, persis
         {/* left: chat */}
         <div>
           <div className="text-xs font-bold text-gray-500 mb-1">Chat with Torai-kun</div>
-          <div className="border-2 border-terra-100 rounded-xl bg-terra-50/50 h-96 overflow-y-auto p-4 space-y-3">
-            {st.chat.map((m, i) => (
-              <div key={i} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
+          <div ref={listRef} className="relative border-2 border-terra-100 rounded-xl bg-terra-50/50 h-96 overflow-y-auto p-4 space-y-3">
+            {st.chat.map((m, i, arr) => (
+              <div key={i} ref={i === arr.length - 1 ? lastMsgRef : null} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
                 <div className={
                   'max-w-[85%] rounded-2xl px-4 py-2 text-sm chat-md ' +
                   (m.role === 'user' ? 'bg-terra-500 text-white' : 'bg-white border border-terra-200')
@@ -969,7 +976,6 @@ function ChatStep({ st, up, busy, setBusy, advance, auth, dnum, setError, persis
               </div>
             ))}
             {busy === 'chat' && <div className="text-sm"><Spinner text="Torai-kun is typing..." /></div>}
-            <div ref={bottomRef}></div>
           </div>
           <div className="mt-2 flex gap-2">
             <textarea value={input} onChange={e => setInput(e.target.value)}
