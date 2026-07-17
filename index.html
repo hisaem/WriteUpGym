@@ -33,7 +33,7 @@ tailwind.config = {
  * Write-Up Gym — index.html (prototype)
  * Paste your deployed GAS web app /exec URL below
  * ================================================================ */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwrHpawvVRPCB2ySic6poT5-cbYBj-RWZd6JO5ZpCZ9IehifO02LsQfx1LgeK0yvvTDFg/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyi2U6D67S-C-82ENf0t7rpqAQ3j_-yWhAeOaKqSv7dTQ0GA-Mf3ouQ3cAQ6rMv7ZQqUA/exec';
 
 const { useState, useEffect, useRef, useCallback } = React;
 
@@ -116,12 +116,30 @@ const STAGE_BADGE = {
   '完了': 'bg-green-200 text-green-800'
 };
 
+// stage order helpers (for "go back to a previous step" navigation)
+const STAGE_ORDER = ['draft', 'english', 'deepl', 'chat', 'final', 'done'];
+const stageIdx = (s) => STAGE_ORDER.indexOf(s);
+const furthestStage = (a, b) => stageIdx(a) >= stageIdx(b) ? a : b;
+
+// When moving forward after redoing an earlier step, ask before replacing
+// the text the student already wrote in the next step.
+function carryOver(patch, existing, incoming, stepName) {
+  if (existing && existing.trim() && existing !== incoming) {
+    const ok = window.confirm(
+      'You already have text in the ' + stepName + ' step.\n\n' +
+      'OK = replace it with the text from this step\n' +
+      'Cancel = keep what you already wrote in ' + stepName);
+    if (!ok) return {};
+  }
+  return patch;
+}
+
 function emptyState() {
   return {
-    stage: 'draft', draft: '', handwritten: null,
+    stage: 'draft', maxStage: 'draft', draft: '', handwritten: null,
     englishText: '', englishItems: [], englishChat: [],
     deeplText: '', deeplEn: '', deeplChat: [], ref1a: '', ref1b: '',
-    chat: [], chatDraft: '', finalText: '', ref2a: '', ref2b: ''
+    chat: [], chatDraft: '', finalText: '', refLearned: '', refQuestion: ''
   };
 }
 
@@ -148,23 +166,42 @@ function ErrorBanner({ msg, onClose }) {
 // step key → docType (for linking each chip to its Google Doc)
 const STEP_DOC = { draft: 'original', english: 'english', deepl: 'deepl', chat: 'chat', final: 'final' };
 
-function Stepper({ stage, docLinks }) {
+function Stepper({ stage, maxStage, docLinks, onJump }) {
   const idx = stage === 'done' ? STEPS.length : STEPS.findIndex(s => s.key === stage);
+  const maxIdx = maxStage === 'done' ? STEPS.length : STEPS.findIndex(s => s.key === maxStage);
+  const anyJumpable = STEPS.some((s, i) => i <= maxIdx && i !== idx);
   return (
-    <div className="flex flex-wrap gap-1 mb-5">
-      {STEPS.map((s, i) => {
-        const cls = 'px-3 py-1 rounded-full text-xs font-bold ' +
-          (i < idx ? 'bg-green-500 text-white' : i === idx ? 'bg-terra-500 text-white' : 'bg-gray-200 text-gray-500');
-        const url = docLinks && docLinks[STEP_DOC[s.key]];
-        const label = (i < idx ? '✓ ' : '') + s.label;
-        return url ? (
-          <a key={s.key} href={url} target="_blank" rel="noopener"
-            title="Open this stage's Google Doc"
-            className={cls + ' hover:opacity-80 cursor-pointer'}>{label} ↗</a>
-        ) : (
-          <div key={s.key} className={cls}>{label}</div>
-        );
-      })}
+    <div className="mb-5">
+      <div className="flex flex-wrap gap-1">
+        {STEPS.map((s, i) => {
+          const reached = i <= maxIdx;             // the student has been to this step
+          const jumpable = reached && i !== idx;   // click to go (back) to it
+          const cls = 'px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ' +
+            (i === idx ? 'bg-terra-500 text-white'
+              : reached ? 'bg-green-500 text-white hover:bg-green-600 cursor-pointer'
+              : 'bg-gray-200 text-gray-500');
+          const url = docLinks && docLinks[STEP_DOC[s.key]];
+          const label = (reached && i !== idx ? '✓ ' : '') + s.label;
+          return (
+            <div key={s.key} className={cls}
+              title={jumpable ? 'Go back to this step' : undefined}
+              onClick={jumpable && onJump ? () => onJump(s.key) : undefined}>
+              <span>{label}</span>
+              {url && (
+                <a href={url} target="_blank" rel="noopener"
+                  title="Open this stage's Google Doc"
+                  onClick={e => e.stopPropagation()}
+                  className="hover:opacity-70">↗</a>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {anyJumpable && (
+        <div className="text-xs text-gray-400 mt-1">
+          💡 Click a green step to go back and redo it. Click ↗ to open that stage's Google Doc.
+        </div>
+      )}
     </div>
   );
 }
@@ -425,7 +462,10 @@ function WorkView({ auth, dnum, dtitle, setError, onExit }) {
   useEffect(() => {
     api('getState', { name: auth.name, pin: auth.pin, dnum })
       .then(d => {
-        setSt(d.state ? Object.assign(emptyState(), d.state) : emptyState());
+        const s0 = d.state ? Object.assign(emptyState(), d.state) : emptyState();
+        // older saved states have no maxStage — derive it from the current stage
+        s0.maxStage = furthestStage(s0.maxStage || 'draft', s0.stage);
+        setSt(s0);
         setDocLinks(d.docLinks || {});
       })
       .catch(e => { setError(e.message); setSt(emptyState()); });
@@ -433,10 +473,14 @@ function WorkView({ auth, dnum, dtitle, setError, onExit }) {
 
   const up = (patch) => setSt(s => Object.assign({}, s, patch));
 
+  // the stage written to the teacher's sheet is always the FURTHEST stage reached,
+  // so going back to redo a step doesn't make the progress sheet regress
+  const sheetStage = (s) => STAGE_SHEET[furthestStage(s.stage, s.maxStage || s.stage)];
+
   // save state (also updates CurrentStage on the progress sheet)
   const persist = useCallback(async (state) => {
     const s = state || stRef.current;
-    await api('saveState', { name: auth.name, pin: auth.pin, dnum, state: s, stage: STAGE_SHEET[s.stage] });
+    await api('saveState', { name: auth.name, pin: auth.pin, dnum, state: s, stage: sheetStage(s) });
   }, [dnum]);
 
   const manualSave = async () => {
@@ -445,16 +489,27 @@ function WorkView({ auth, dnum, dtitle, setError, onExit }) {
     setBusy('');
   };
 
+  // go back to (or return to) a step the student has already reached
+  const jump = (stageKey) => {
+    if (busy) return;
+    const next = Object.assign({}, stRef.current, { stage: stageKey });
+    setSt(next);
+    persist(next).catch(() => {});
+  };
+
   // save a Google Doc + move to the next step
-  const advance = async (docType, content, nextStage, extraPatch) => {
+  // extraApi: additional fields sent to the saveDoc API (e.g. the final reflection)
+  const advance = async (docType, content, nextStage, extraPatch, extraApi) => {
     setBusy('doc'); setError('');
     try {
-      const next = Object.assign({}, stRef.current, extraPatch || {}, { stage: nextStage });
-      const r = await api('saveDoc', {
+      const cur = stRef.current;
+      const nextMax = furthestStage(nextStage, cur.maxStage || cur.stage);
+      const next = Object.assign({}, cur, extraPatch || {}, { stage: nextStage, maxStage: nextMax });
+      const r = await api('saveDoc', Object.assign({
         name: auth.name, pin: auth.pin, dnum, docType,
         content, stage: STAGE_SHEET[nextStage]
-      });
-      await api('saveState', { name: auth.name, pin: auth.pin, dnum, state: next, stage: STAGE_SHEET[nextStage] });
+      }, extraApi || {}));
+      await api('saveState', { name: auth.name, pin: auth.pin, dnum, state: next, stage: sheetStage(next) });
       if (r && r.url) setDocLinks(dl => Object.assign({}, dl, { [docType]: r.url }));
       if (r && r.copyUrl) setDocLinks(dl => Object.assign({}, dl, { finalcopy: r.copyUrl }));
       setSt(next);
@@ -477,7 +532,7 @@ function WorkView({ auth, dnum, dtitle, setError, onExit }) {
         <h2 className="text-xl font-bold text-gray-700 mb-2">D{dnum}{dtitle && <span className="text-base font-normal text-gray-500"> — {dtitle}</span>}</h2>
         {st.stage !== 'done' && <SaveBtn />}
       </div>
-      <Stepper stage={st.stage} docLinks={docLinks} />
+      <Stepper stage={st.stage} maxStage={st.maxStage} docLinks={docLinks} onJump={jump} />
 
       {st.stage === 'draft' && <DraftStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} dnum={dnum} setError={setError} />}
       {st.stage === 'english' && <EnglishStep st={st} up={up} busy={busy} setBusy={setBusy} advance={advance} auth={auth} setError={setError} persist={persist} />}
@@ -569,7 +624,8 @@ function DraftStep({ st, up, busy, setBusy, advance, auth, dnum, setError }) {
 
       <div className="mt-4 text-right">
         <button disabled={!st.draft.trim() || !!busy}
-          onClick={() => advance('original', st.draft, 'english', { englishText: st.draft })}
+          onClick={() => advance('original', st.draft, 'english',
+            carryOver({ englishText: st.draft }, st.englishText, st.draft, 'English Check'))}
           className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white font-bold px-6 py-2 rounded-lg">
           {busy === 'doc' ? 'Saving...' : 'Save & go to English Check →'}
         </button>
@@ -771,7 +827,8 @@ function EnglishStep({ st, up, busy, setBusy, advance, auth, setError, persist }
 
       <div className="mt-5 text-right">
         <button disabled={!!busy || !st.englishText.trim()}
-          onClick={() => advance('english', st.englishText, 'deepl', { deeplText: st.englishText })}
+          onClick={() => advance('english', st.englishText, 'deepl',
+            carryOver({ deeplText: st.englishText }, st.deeplText, st.englishText, 'DeepL Check'))}
           className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white font-bold px-6 py-2 rounded-lg">
           {busy === 'doc' ? 'Saving...' : 'Done — go to DeepL Check →'}
         </button>
@@ -890,7 +947,8 @@ function DeepLStep({ st, up, busy, setBusy, advance, auth, setError, persist }) 
 
       <div className="mt-4 text-right">
         <button disabled={!!busy || !st.deeplText.trim() || !st.deeplEn}
-          onClick={() => advance('deepl', docContent, 'chat', { chatDraft: st.deeplText })}
+          onClick={() => advance('deepl', docContent, 'chat',
+            carryOver({ chatDraft: st.deeplText }, st.chatDraft, st.deeplText, 'Torai-kun Chat'))}
           className="bg-terra-500 hover:bg-terra-600 disabled:bg-gray-300 text-white font-bold px-6 py-2 rounded-lg">
           {busy === 'doc' ? 'Saving...' : 'Done — go to Torai-kun Chat →'}
         </button>
@@ -995,7 +1053,8 @@ function ChatStep({ st, up, busy, setBusy, advance, auth, dnum, setError, persis
             className="w-full h-96 border-2 border-gray-200 rounded-xl p-3 text-sm focus:border-terra-400 outline-none" />
           <div className="mt-2 text-right">
             <button disabled={!!busy || st.chat.length < 4}
-              onClick={() => advance('chat', chatLog, 'final', { finalText: st.chatDraft || st.deeplText })}
+              onClick={() => advance('chat', chatLog, 'final',
+                carryOver({ finalText: st.chatDraft || st.deeplText }, st.finalText, st.chatDraft || st.deeplText, 'Final Draft'))}
               className="bg-terra-700 hover:bg-terra-800 disabled:bg-gray-300 text-white font-bold px-5 py-2 rounded-lg text-sm">
               {busy === 'doc' ? 'Saving...' : 'Finish corrections → Final Draft'}
             </button>
@@ -1008,10 +1067,13 @@ function ChatStep({ st, up, busy, setBusy, advance, auth, dnum, setError, persis
 
 /* ---------- ⑤ Final Draft ---------- */
 function FinalStep({ st, up, busy, advance }) {
+  const learned = (st.refLearned || '').trim();
+  const question = (st.refQuestion || '').trim();
+
   const docContent = st.finalText +
-    '\n\n----------------\nReflection 2 (optional)\n' +
-    '- Parts that were hard to express:\n' + (st.ref2a || '(not filled in)') +
-    '\n\n- What I struggled with:\n' + (st.ref2b || '(not filled in)');
+    '\n\n----------------\nReflection\n' +
+    '- 新しく学んだこと・気がついたこと (New things I learned / noticed):\n' + learned +
+    '\n\n- 松井先生への質問 (Questions for Matsui-sensei):\n' + (question || '(none)');
 
   return (
     <div>
@@ -1021,21 +1083,29 @@ function FinalStep({ st, up, busy, advance }) {
         rows={12} className="w-full border-2 border-gray-200 rounded-xl p-4 focus:border-terra-400 outline-none" />
 
       <div className="mt-5 border-t pt-4">
-        <h4 className="font-bold text-sm mb-2">Reflection 2 <span className="font-normal text-gray-400">(optional)</span></h4>
-        <label className="block text-xs text-gray-500 mb-1">Which parts were hard to express?</label>
-        <textarea value={st.ref2a} onChange={e => up({ ref2a: e.target.value })} rows={2}
-          className="w-full border rounded-lg p-2 text-sm mb-3" />
-        <label className="block text-xs text-gray-500 mb-1">What did you struggle with?</label>
-        <textarea value={st.ref2b} onChange={e => up({ ref2b: e.target.value })} rows={2}
+        <h4 className="font-bold text-sm mb-1">Reflection</h4>
+        <p className="text-xs text-gray-400 mb-2">You can write in English or Japanese.</p>
+        <label className="block text-xs text-gray-500 mb-1">
+          新しく学んだこと・気がついたこと (New things you learned or noticed) <span className="text-red-500 font-bold">* required</span>
+        </label>
+        <textarea value={st.refLearned} onChange={e => up({ refLearned: e.target.value })} rows={3}
+          className={'w-full border-2 rounded-lg p-2 text-sm mb-3 outline-none ' + (learned ? 'border-gray-200 focus:border-terra-400' : 'border-terra-300 bg-terra-50/50 focus:border-terra-400')} />
+        <label className="block text-xs text-gray-500 mb-1">
+          松井先生への質問 (Questions for Matsui-sensei) <span className="text-gray-400">— optional</span>
+        </label>
+        <textarea value={st.refQuestion} onChange={e => up({ refQuestion: e.target.value })} rows={2}
           className="w-full border rounded-lg p-2 text-sm" />
       </div>
 
       <div className="mt-4 text-right">
-        <button disabled={!!busy || !st.finalText.trim()}
-          onClick={() => advance('final', docContent, 'done')}
+        <button disabled={!!busy || !st.finalText.trim() || !learned}
+          onClick={() => advance('final', docContent, 'done', null,
+            { reflection: { learned: learned, question: question } })}
           className="bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white font-bold px-8 py-2 rounded-lg">
           {busy === 'doc' ? 'Submitting...' : '🎉 Submit'}
         </button>
+        {!learned &&
+          <div className="text-xs text-gray-400 mt-1">* Please fill in the reflection ("新しく学んだこと・気がついたこと") before submitting</div>}
       </div>
     </div>
   );
